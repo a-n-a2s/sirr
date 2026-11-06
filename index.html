@@ -553,6 +553,12 @@ textarea.inp{min-height:96px;resize:vertical;line-height:1.6}
 .orow .oh b{font-family:var(--f-en);letter-spacing:.08em;font-weight:600;color:var(--gold-hi);font-size:16px}
 .orow .od{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:6px 18px;font-size:13.5px;color:var(--tx2)}
 .orow .od span{color:var(--faint)}
+.otot{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13.5px;color:var(--mute)}
+.otot b{color:var(--cream);font-weight:600}
+.otot .t b{color:var(--gold-hi)}
+.inrow{display:flex;gap:8px}
+.inrow .inp{min-height:46px;flex:1;min-width:0}
+.lnk{color:var(--gold-hi);text-decoration:underline;text-underline-offset:3px}
 .orow pre{margin:0;white-space:pre-wrap;font-family:inherit;font-size:13.5px;color:var(--tx2);background:var(--ink);border-radius:10px;padding:10px 12px}
 .filt{display:flex;gap:6px;flex-wrap:wrap}
 .filt button{height:34px;padding-inline:12px;border-radius:999px;border:1px solid var(--line);font-size:13px;color:var(--tx2);background:var(--ink-1)}
@@ -588,6 +594,7 @@ var FA_CORE='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontaw
 var FA_BRANDS='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/brands.min.js';
 var GH={owner:'a-n-a2s',repo:'sirr',priv:'sirr-private',branch:'main'};
 var SITE='https://'+GH.owner.toLowerCase()+'.github.io/'+GH.repo+'/';
+var ORDERS_GS="/**\n * @OnlyCurrentDoc\n * متجر سِرّ: استقبال الطلبات بجدول Google.\n * انسخ الكود كامل، الصقه مكان الكود الموجود، واحفظ. لا تعدّل عليه.\n */\nvar KEY = '@KEY@';\nvar SHEET = 'الطلبات';\nvar COLS = [\n  ['id', 'المعرّف'], ['no', 'رقم الطلب'], ['at', 'الوقت'], ['status', 'الحالة'],\n  ['name', 'الاسم'], ['phone', 'الهاتف'], ['recName', 'اسم المستلم'], ['recPhone', 'هاتف المستلم'],\n  ['zone', 'المنطقة'], ['address', 'العنوان'], ['when', 'موعد التوصيل'], ['items', 'الباكيجات'],\n  ['sub', 'المجموع'], ['discount', 'الخصم'], ['coupon', 'كود الخصم'], ['delivery', 'التوصيل'], ['total', 'الإجمالي'],\n  ['pay', 'الدفع'], ['notes', 'ملاحظات'], ['msg', 'نص الرسالة']\n];\nvar NUMS = { sub: 1, discount: 1, delivery: 1, total: 1 };\nvar STATUS_COL = 4;\n\nfunction sheet_() {\n  var ss = SpreadsheetApp.getActiveSpreadsheet();\n  var sh = ss.getSheetByName(SHEET);\n  if (!sh) {\n    sh = ss.insertSheet(SHEET, 0);\n    sh.appendRow(COLS.map(function (c) { return c[1]; }));\n    sh.setFrozenRows(1);\n    sh.setRightToLeft(true);\n    sh.getRange(1, 1, 1, COLS.length).setFontWeight('bold').setBackground('#17130e').setFontColor('#ecd49a');\n  }\n  return sh;\n}\n\nfunction out_(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n\nfunction cell_(k, v) {\n  if (NUMS[k]) { var n = Number(v); return isFinite(n) ? n : 0; }\n  v = String(v == null ? '' : v).slice(0, k === 'msg' ? 5000 : (k === 'items' ? 3000 : 600));\n  return v ? \"'\" + v : '';\n}\n\nfunction rowOf_(sh, id) {\n  var n = sh.getLastRow() - 1;\n  if (n < 1 || !id) return -1;\n  var ids = sh.getRange(2, 1, n, 1).getValues();\n  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) return i + 2;\n  return -1;\n}\n\nfunction list_(sh) {\n  var n = sh.getLastRow() - 1;\n  if (n < 1) return [];\n  return sh.getRange(2, 1, n, COLS.length).getValues().map(function (r) {\n    var o = {};\n    COLS.forEach(function (c, i) { var v = r[i]; o[c[0]] = (v instanceof Date) ? v.getTime() : v; });\n    return o;\n  });\n}\n\nfunction doGet(e) {\n  var p = (e && e.parameter) || {};\n  if (p.key !== KEY) return out_({ ok: false, error: 'key' });\n  var sh = sheet_();\n  var url = SpreadsheetApp.getActiveSpreadsheet().getUrl();\n  if (p.action === 'ping') return out_({ ok: true, sheet: url });\n  return out_({ ok: true, sheet: url, orders: list_(sh) });\n}\n\nfunction doPost(e) {\n  var d;\n  try { d = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return out_({ ok: false, error: 'json' }); }\n  var lock = LockService.getScriptLock();\n  lock.waitLock(20000);\n  try {\n    var sh = sheet_();\n    if (d.action === 'order') {\n      var o = d.order || {};\n      if (!o.id || !o.name || !o.phone || !o.items) return out_({ ok: false, error: 'missing' });\n      var cache = CacheService.getScriptCache();\n      var count = Number(cache.get('rate') || 0);\n      if (count > 40) return out_({ ok: false, error: 'busy' });\n      cache.put('rate', String(count + 1), 60);\n      if (rowOf_(sh, o.id) > 0) return out_({ ok: true, dup: true });\n      sh.appendRow(COLS.map(function (c) {\n        if (c[0] === 'at') return new Date();\n        if (c[0] === 'status') return 'new';\n        return cell_(c[0], o[c[0]]);\n      }));\n      return out_({ ok: true });\n    }\n    if (d.key !== KEY) return out_({ ok: false, error: 'key' });\n    var row = rowOf_(sh, d.id);\n    if (row < 0) return out_({ ok: false, error: 'notfound' });\n    if (d.action === 'status') { sh.getRange(row, STATUS_COL).setValue(String(d.status || 'new')); return out_({ ok: true }); }\n    if (d.action === 'delete') { sh.deleteRow(row); return out_({ ok: true }); }\n    return out_({ ok: false, error: 'action' });\n  } finally {\n    lock.releaseLock();\n  }\n}\n";
 
 /* ---------- helpers ---------- */
 function $(s,r){return (r||document).querySelector(s)}
@@ -640,7 +647,7 @@ var DEF={
   subAr:'باكيجات هدايا جاهزة · توصيل لكل محافظات المملكة',subEn:'Ready gift packages · Delivery across Jordan',
   secTitleAr:'الأقسام',secTitleEn:'Collections',
   whatsapp:'0782048654',waMsgAr:'مرحبا سِرّ، عندي استفسار',waMsgEn:'Hello Sirr, I have a question',
-  facebook:'',instagram:'',tiktok:'',curAr:'د.أ',curEn:'JOD',showReviews:true,
+  facebook:'',instagram:'',tiktok:'',curAr:'د.أ',curEn:'JOD',showReviews:true,ordersUrl:'',
   announce:{on:false,ar:'',en:''},
   cod:{labelAr:'كاش عند الاستلام',labelEn:'Cash on delivery'},
   cliq:{on:false,alias:'',holder:'',bank:'',noteAr:'',noteEn:''},
@@ -663,7 +670,7 @@ var ck=jget('sirr_ck',{});if(!ck||typeof ck!=='object')ck={};
 ck.gift=false;ck.coupon=ck.coupon||'';ck.pay='cod';
 var lastOrder=jget('sirr_last',null);
 var cap={ready:false,user:null,artifact:null,assets:null,db:null,owner:false,uid:null};
-var A={tab:'overview',dirty:false,modal:null,ed:null,pfilter:'all',ofilter:'all',orders:[],ordersState:'idle',codes:{},draft:null,busy:false,confirm:null,privOk:false,loginErr:'',loginBusy:false};
+var A={tab:'overview',dirty:false,modal:null,ed:null,pfilter:'all',ofilter:'all',orders:[],ostate:'off',oAt:0,oErr:'',oIds:null,sheet:'',gsErr:'',gsBusy:false,gsEditing:false,codes:{},draft:null,busy:false,confirm:null,privOk:false,loginErr:'',loginBusy:false};
 var route={v:'home',id:''};
 
 /* ---------- i18n ---------- */
@@ -676,13 +683,13 @@ ar:{home:'الرئيسية',cart:'السلة',lang:'EN',shop:'ابدأ التس�
  zone:'المحافظة / المنطقة',chooseZone:'اختر المنطقة',address:'عنوان التوصيل بالتفصيل',addressPh:'المنطقة، الشارع، رقم البناية، علامة مميزة',when:'موعد التوصيل',date:'التاريخ',slot:'الوقت المفضّل',anySlot:'أي وقت',dateHint:'اتركه فاضي لأقرب موعد متاح',
  pay:'طريقة الدفع',notes:'ملاحظات',notesPh:'أي تفاصيل إضافية بتحب نعرفها',coupon:'كود الخصم',apply:'تطبيق',couponOk:'تم تطبيق الكود',couponBad:'الكود غير صالح',couponMin:'الحد الأدنى للطلب {n}',remove:'إزالة',
  send:'إرسال الطلب عبر واتساب',req:'هذا الحقل مطلوب',phoneBad:'اكتب رقم هاتف صحيح',orderSum:'ملخص الطلب',
- doneT:'طلبك جاهز للإرسال',doneS:'خطوة أخيرة: افتح واتساب واضغط إرسال، ورح نأكّد طلبك بأسرع وقت.',orderNo:'رقم الطلب',s1:'افتح واتساب من الزر تحت',s2:'اضغط إرسال على الرسالة الجاهزة',s3:'منأكّدلك الطلب وموعد التوصيل',openWa:'فتح واتساب وإرسال الطلب',copyMsg:'نسخ نص الطلب',backShop:'الرجوع للمتجر',copied:'انتسخ',
+ doneT:'شكراً إلك! طلبك جاهز',doneS:'انفتحلك الواتساب والطلب مكتوب، بس اضغط زر الإرسال. ومنتواصل معك بأسرع وقت لتأكيد الطلب.',orderNo:'رقم الطلب',s1:'افتح واتساب من الزر تحت',s2:'اضغط إرسال على الرسالة الجاهزة',s3:'منأكّدلك الطلب وموعد التوصيل',openWa:'فتح واتساب وإرسال الطلب',copyMsg:'نسخ نص الطلب',backShop:'الرجوع للمتجر',copied:'انتسخ',
  reviews:'آراء الزباين',rateUs:'قيّم تجربتك',noRev:'كن أول من يقيّم تجربته مع سِرّ',revName:'اسمك',revText:'تجربتك',revStars:'تقييمك',revSend:'إرسال التقييم عبر واتساب',revNote:'بيظهر تقييمك بالمتجر بعد ما نراجعه.',revPk:'الباكيج (اختياري)',
  contactT:'نحن هون إلك',waLabel:'رقم التواصل عبر واتساب',copy:'نسخ',fb:'فيسبوك',ig:'إنستغرام',tt:'تيك توك',
  f1:'توصيل لكل محافظات المملكة',f1s:'رسوم التوصيل حسب المنطقة',f2:'الدفع عند الاستلام',f2s:'كاش للمندوب وقت التوصيل',f3:'تغليف فاخر',f3s:'كل باكيج بيوصل جاهز للإهداء',
  admin:'لوحة التحكم',pieces:'{n}',days:'',prevBar:'عندك تعديلات ما انتشرت لسه',publish:'حفظ ونشر',toAdmin:'لوحة التحكم',
  newOrderMsg:'طلب جديد من متجر سِرّ',lName:'الاسم',lPhone:'الهاتف',lGift:'الهدية لشخص آخر',lRecName:'اسم المستلم',lRecPhone:'هاتف المستلم',lZone:'المنطقة',lAddr:'العنوان',lDate:'موعد التوصيل',lItems:'المنتجات',lSub:'المجموع',lDisc:'الخصم',lDel:'التوصيل',lTot:'الإجمالي',lPay:'الدفع',lNotes:'ملاحظات',lNo:'رقم الطلب',
- revMsg:'تقييم جديد لمتجر سِرّ',cliqHint:'حوّل المبلغ على CliQ وابعث صورة الإيصال على واتساب',alias:'الاسم المستعار (Alias)',holder:'اسم صاحب الحساب',bank:'البنك',saveP:'وفّر {n}%',soon:'قريباً',soonT:'هذا القسم رح يفتح قريباً',soonS:'لسه بنجهّز هالقسم. تابعنا أو اسألنا على واتساب.',freeShip:'توصيل مجاني',freeShipP:'توصيل مجاني لكل المحافظات مع هالباكيج',freeWith:'التوصيل مجاني لأن طلبك فيه «{n}»'},
+ revMsg:'تقييم جديد لمتجر سِرّ',cliqHint:'حوّل المبلغ على CliQ وابعث صورة الإيصال على واتساب',alias:'الاسم المستعار (Alias)',holder:'اسم صاحب الحساب',bank:'البنك',saveP:'وفّر {n}%',soon:'قريباً',soonT:'هذا القسم رح يفتح قريباً',soonS:'لسه بنجهّز هالقسم. تابعنا أو اسألنا على واتساب.',freeShip:'توصيل مجاني',freeShipP:'توصيل مجاني لكل المحافظات مع هالباكيج',freeWith:'التوصيل مجاني لأن طلبك فيه «{n}»',sendHint:'بيفتحلك واتساب والطلب مكتوب جاهز، بس اضغط إرسال.',waAgainQ:'ما انفتح الواتساب؟',waAgain:'افتحه من هون'},
 en:{home:'Home',cart:'Bag',lang:'ع',shop:'Start shopping',waChat:'Chat on WhatsApp',sections:'Collections',packages:'Packages',allPk:'All packages',viewAll:'View all',
  add:'Add to bag',added:'Added to your bag',buyNow:'Order now',out:'Sold out',inStock:'In stock',left:'Only {n} left',contents:'What is inside',sample:'Sample item',
  back:'Back',emptyCat:'No packages here yet',emptyCatT:'New packages will be added here soon.',emptyShop:'The shop is getting ready',emptyShopT:'Packages are coming soon. Follow us or chat with us on WhatsApp.',
@@ -691,13 +698,13 @@ en:{home:'Home',cart:'Bag',lang:'ع',shop:'Start shopping',waChat:'Chat on Whats
  zone:'Governorate / area',chooseZone:'Choose area',address:'Full delivery address',addressPh:'Area, street, building number, landmark',when:'Delivery time',date:'Date',slot:'Preferred time',anySlot:'Any time',dateHint:'Leave empty for the earliest available date',
  pay:'Payment',notes:'Notes',notesPh:'Anything else we should know',coupon:'Discount code',apply:'Apply',couponOk:'Code applied',couponBad:'This code is not valid',couponMin:'Minimum order {n}',remove:'Remove',
  send:'Send order via WhatsApp',req:'This field is required',phoneBad:'Enter a valid phone number',orderSum:'Order summary',
- doneT:'Your order is ready to send',doneS:'Last step: open WhatsApp and tap send. We will confirm your order shortly.',orderNo:'Order number',s1:'Open WhatsApp with the button below',s2:'Tap send on the prepared message',s3:'We confirm your order and delivery time',openWa:'Open WhatsApp and send',copyMsg:'Copy order text',backShop:'Back to shop',copied:'Copied',
+ doneT:'Thank you! Your order is ready',doneS:'WhatsApp opened with your order written. Just tap send, and we will contact you shortly to confirm.',orderNo:'Order number',s1:'Open WhatsApp with the button below',s2:'Tap send on the prepared message',s3:'We confirm your order and delivery time',openWa:'Open WhatsApp and send',copyMsg:'Copy order text',backShop:'Back to shop',copied:'Copied',
  reviews:'Customer reviews',rateUs:'Rate your experience',noRev:'Be the first to review your Sirr experience',revName:'Your name',revText:'Your experience',revStars:'Your rating',revSend:'Send review via WhatsApp',revNote:'Your review appears after we check it.',revPk:'Package (optional)',
  contactT:'We are here for you',waLabel:'WhatsApp contact number',copy:'Copy',fb:'Facebook',ig:'Instagram',tt:'TikTok',
  f1:'Delivery across Jordan',f1s:'Fee depends on your area',f2:'Pay on delivery',f2s:'Cash to the courier',f3:'Luxury wrapping',f3s:'Every package arrives ready to gift',
  admin:'Dashboard',pieces:'{n}',days:'',prevBar:'You have unpublished changes',publish:'Save & publish',toAdmin:'Dashboard',
  newOrderMsg:'New order from Sirr',lName:'Name',lPhone:'Phone',lGift:'Gift for someone else',lRecName:'Recipient',lRecPhone:'Recipient phone',lZone:'Area',lAddr:'Address',lDate:'Delivery date',lItems:'Items',lSub:'Subtotal',lDisc:'Discount',lDel:'Delivery',lTot:'Total',lPay:'Payment',lNotes:'Notes',lNo:'Order no',
- revMsg:'New review for Sirr',cliqHint:'Transfer the amount via CliQ and send the receipt on WhatsApp',alias:'Alias',holder:'Account holder',bank:'Bank',saveP:'Save {n}%',soon:'Soon',soonT:'This section opens soon',soonS:'We are still preparing it. Follow us or ask us on WhatsApp.',freeShip:'Free delivery',freeShipP:'Free delivery across Jordan with this package',freeWith:'Delivery is free because your order includes «{n}»'}
+ revMsg:'New review for Sirr',cliqHint:'Transfer the amount via CliQ and send the receipt on WhatsApp',alias:'Alias',holder:'Account holder',bank:'Bank',saveP:'Save {n}%',soon:'Soon',soonT:'This section opens soon',soonS:'We are still preparing it. Follow us or ask us on WhatsApp.',freeShip:'Free delivery',freeShipP:'Free delivery across Jordan with this package',freeWith:'Delivery is free because your order includes «{n}»',sendHint:'WhatsApp opens with your order written, just tap send.',waAgainQ:'WhatsApp did not open?',waAgain:'Open it here'}
 };
 function t(k,n){var s=(T[lang]&&T[lang][k])||T.ar[k]||k;return n!=null?s.replace('{n}',n):s}
 function L(o,k){if(!o)return '';var en=o[k+'En'],ar=o[k+'Ar'];return lang==='en'?(en||ar||''):(ar||en||'')}
@@ -919,16 +926,16 @@ function sumHTML(tt,its){its=its||cartItems();
  '<div class="sumrow"><span>'+t('subtotal')+'</span><b>'+money(tt.sub)+'</b></div>'+(tt.dis?'<div class="sumrow dis"><span>'+t('discount')+'</span><b>−'+money(tt.dis)+'</b></div>':'')+
  '<div class="sumrow"><span>'+t('delivery')+(tt.zone?' · '+esc(LZ(tt.zone)):'')+'</span><b>'+(tt.fee==null?t('byZone'):tt.fee===0?t('free'):money(tt.fee))+'</b></div>'+(tt.freeP?'<p class="note okn">'+ic('truck','sm')+esc(t('freeWith',L(tt.freeP,'name')))+'</p>':'')+
  '<div class="sumrow tot"><span>'+t('total')+'</span><b>'+money(tt.total)+'</b></div>'+
- '<button type="submit" class="btn gold block">'+fab('whatsapp')+t('send')+'</button>'}
+ '<button type="submit" class="btn gold block">'+fab('whatsapp')+t('send')+'</button><p class="note" style="justify-content:center;text-align:center">'+t('sendHint')+'</p>'}
 function couponMinOf(code){var h=cyrb('sirr:'+String(code||'').trim().toUpperCase());var c=S.coupons.filter(function(x){return x.h===h})[0];return c?c.min:0}
 function doneView(){var o=lastOrder;if(!o)return homeView();
  return '<div class="lite bg page"><div class="wrap"><div class="done"><div class="ok">'+ic('check')+'</div><h1>'+t('doneT')+'</h1><p style="margin:0;color:var(--mute)">'+t('doneS')+'</p><div><div style="color:var(--mute);font-size:13px">'+t('orderNo')+'</div><div class="ono ltr">'+esc(o.no)+'</div></div>'+
- '<ol class="steps-n"><li>'+t('s1')+'</li><li>'+t('s2')+'</li><li>'+t('s3')+'</li></ol>'+
- '<a class="btn wa block" href="'+esc(waLink(o.msg))+'" target="_blank" rel="noopener">'+fab('whatsapp')+t('openWa')+'</a><button class="btn line block" data-a="copy" data-v="'+esc(o.msg)+'">'+ic('copy','sm')+t('copyMsg')+'</button><button class="btn ghost" data-a="go" data-h="">'+t('backShop')+'</button></div></div></div>'}
+ '<button class="btn gold block" data-a="go" data-h="">'+t('backShop')+'</button>'+
+ '<p class="note" style="justify-content:center">'+t('waAgainQ')+' <a class="lnk" href="'+esc(waLink(o.msg))+'" target="_blank" rel="noopener">'+t('waAgain')+'</a></p></div></div></div>'}
 
 /* ---------- order message ---------- */
 function buildOrder(){var its=cartItems(),tt=totals(),st=S.settings;
- var d=new Date();var no='SIRR-'+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(Math.floor(100+Math.random()*900));
+ var d=new Date();var no='SIRR-'+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'-'+String(Math.floor(1000+Math.random()*9000));
  var ln=[t('newOrderMsg'),t('lNo')+': '+no,'————————',t('lName')+': '+ck.name.trim(),t('lPhone')+': '+ck.phone.trim()];
  if(ck.gift){ln.push(t('lGift'));ln.push(t('lRecName')+': '+(ck.recName||'').trim());ln.push(t('lRecPhone')+': '+(ck.recPhone||'').trim())}
  ln.push(t('lZone')+': '+(tt.zone?LZ(tt.zone):''));ln.push(t('lAddr')+': '+String(ck.address||'').replace(/\s*\n\s*/g,'، ').trim());
@@ -937,7 +944,15 @@ function buildOrder(){var its=cartItems(),tt=totals(),st=S.settings;
  ln.push('————————');ln.push(t('lSub')+': '+moneyTxt(tt.sub));if(tt.dis)ln.push(t('lDisc')+' ('+String(ck.coupon).toUpperCase()+'): -'+moneyTxt(tt.dis));
  ln.push(t('lDel')+': '+(tt.fee===0?t('free')+(tt.freeP?' ('+L(tt.freeP,'name')+')':''):moneyTxt(tt.fee||0)));ln.push(t('lTot')+': '+moneyTxt(tt.total));
  ln.push(t('lPay')+': '+(ck.pay==='cliq'?'CliQ':(lang==='en'?st.cod.labelEn:st.cod.labelAr)));if(String(ck.notes||'').trim())ln.push(t('lNotes')+': '+String(ck.notes).trim());
- return {no:no,msg:ln.join('\n'),total:tt.total,at:Date.now()}}
+ var z=tt.zone,msg=ln.join('\n');
+ var data={id:'o'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),no:no,name:ck.name.trim(),phone:ck.phone.trim(),recName:ck.gift?String(ck.recName||'').trim():'',recPhone:ck.gift?String(ck.recPhone||'').trim():'',zone:z?(z.ar||z.en||''):'',address:String(ck.address||'').replace(/\s*\n\s*/g,'، ').trim(),when:[ck.date||'',ck.slot||''].filter(Boolean).join(' · '),
+  items:its.map(function(x){return (x.p.nameAr||x.p.nameEn||'')+' × '+x.q+' = '+(Math.round(num(x.p.price)*x.q*100)/100)+' '+(st.curAr||'د.أ')}).join('\n'),sub:tt.sub,discount:tt.dis,coupon:tt.dis?String(ck.coupon).toUpperCase():'',delivery:tt.fee||0,total:tt.total,pay:ck.pay==='cliq'?'CliQ':st.cod.labelAr,notes:String(ck.notes||'').trim(),msg:msg};
+ return {no:no,msg:msg,total:tt.total,at:Date.now(),data:data}}
+function sendOrder(o){var u=String(S.settings.ordersUrl||'').trim();if(!u||!o||!o.data)return;var body=JSON.stringify({action:'order',order:o.data});
+ try{if(navigator.sendBeacon&&navigator.sendBeacon(u,new Blob([body],{type:'text/plain;charset=UTF-8'})))return}catch(e){}
+ try{fetch(u,{method:'POST',body:body,keepalive:true,mode:'no-cors'}).catch(function(){})}catch(e){}}
+function isMobile(){try{return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||matchMedia('(pointer:coarse)').matches}catch(e){return false}}
+function openWa(url){if(!isMobile()){var w=null;try{w=window.open(url,'_blank')}catch(e){}if(w){try{w.opener=null}catch(e){}return}}location.href=url}
 function validate(){ckErr={};function rq(k){if(!String(ck[k]||'').trim())ckErr[k]=t('req')}rq('name');rq('phone');rq('zone');rq('address');if(ck.gift){rq('recName');rq('recPhone')}
  function ph(k){var v=String(ck[k]||'').replace(/\D/g,'');if(v&&(v.length<9||v.length>13))ckErr[k]=t('phoneBad')}ph('phone');if(ck.gift)ph('recPhone');return !Object.keys(ckErr).length}
 
@@ -963,6 +978,7 @@ function fallbackCopy(v){var ta=document.createElement('textarea');ta.value=v;ta
 var timers=[],sealRaf=0,io=null;
 function stopTimers(){timers.forEach(clearInterval);timers=[];cancelAnimationFrame(sealRaf);if(io){io.disconnect();io=null}}
 function afterRender(){
+ if(route.v==='admin'){var at=$('.atab.on');if(at&&at.parentNode.scrollWidth>at.parentNode.clientWidth+4){try{at.scrollIntoView({block:'nearest',inline:'center'})}catch(e){}}}
  initSeal();
  var tr=$('#bnTrack');if(tr){var dots=$$('#bnDots button');var idx=0,paused=false;var n=tr.children.length;
   tr.addEventListener('scroll',function(){var w=tr.clientWidth;var i=Math.round(Math.abs(tr.scrollLeft)/w);if(i!==idx){idx=i;dots.forEach(function(d,j){d.classList.toggle('on',j===i)})}},{passive:true});
@@ -1026,11 +1042,11 @@ function onField(e){var el=e.target;if(!el||!el.getAttribute)return;
  var r=el.getAttribute('data-rv');if(r){rv[r]=el.value;var a=$('#rvSend');if(a)a.href=reviewLink();return}
  admField(el,e)}
 document.addEventListener('submit',function(e){var f=e.target;if(f.id==='loginForm'){e.preventDefault();var tk=$('#ghTok');var v=tk?tk.value.trim():'';if(v)doLogin(v);return}if(f.id==='ckForm'){e.preventDefault();if(!validate()){render();var x=$('.inp.err');if(x){x.scrollIntoView({block:'center'});try{x.focus({preventScroll:true})}catch(_){}}return}
- lastOrder=buildOrder();store.set('sirr_last',JSON.stringify(lastOrder));cart=[];saveCart();ck.coupon='';ck.gift=false;ck.date='';ck.slot='';ck.notes='';ck.recName='';ck.recPhone='';go('done');return}
+ var bo=buildOrder();sendOrder(bo);var wl=waLink(bo.msg);lastOrder={no:bo.no,msg:bo.msg,total:bo.total,at:bo.at};store.set('sirr_last',JSON.stringify(lastOrder));cart=[];saveCart();ck.coupon='';ck.gift=false;ck.date='';ck.slot='';ck.notes='';ck.recName='';ck.recPhone='';go('done');openWa(wl);return}
  e.preventDefault()});
 
 /* ================= ADMIN ================= */
-var TABS=[['overview','نظرة عامة','chart'],['cats','الأقسام','grid'],['prods','الباكيجات','gift'],['banners','بانر العروض','image'],['orders','الطلبات','box'],['zones','التوصيل','truck'],['coupons','أكواد الخصم','pct'],['reviews','التقييمات','star'],['contact','التواصل والنصوص','msg'],['payment','الدفع','cash']];
+var TABS=[['overview','نظرة عامة','chart'],['cats','الأقسام','grid'],['prods','الباكيجات','gift'],['banners','بانر العروض','image'],['orders','طلبات','box'],['zones','التوصيل','truck'],['coupons','أكواد الخصم','pct'],['reviews','التقييمات','star'],['contact','التواصل والنصوص','msg'],['payment','الدفع','cash']];
 function adminView(){
  if(!cap.ready)return '<div class="locked">'+sealSVG({cls:'seal-s'})+'<span class="spin"></span><p style="color:var(--mute)">جاري التحقق من صلاحية الدخول…</p></div>';
  if(!cap.owner)return loginView();
@@ -1051,7 +1067,8 @@ function aOverview(){var vis=prods().length,samples=S.products.filter(function(p
  return ah('أهلاً فيك بلوحة تحكم سِرّ','من هون بتتحكم بكل شي بيشوفه الزبون. عدّل اللي بدك إياه، وبعدين اضغط «حفظ ونشر» فوق عشان يظهر للكل.')+
  (A.draft?'<div class="notice warn">'+ic('warn')+'<div class="nb"><b>في تعديلات محفوظة من آخر مرة وما انتشرت</b><span>بتقدر ترجّعها وتكمّل عليها، أو تتجاهلها.</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn gold sm" data-a="draftRestore">استرجاع التعديلات</button><button class="btn ghost sm" data-a="draftDrop">تجاهلها</button></div></div></div>':'')+
  
- '<div class="stats"><div class="stat"><span>الباكيجات الظاهرة</span><b class="num">'+vis+'</b><small>من أصل '+S.products.length+'</small></div><div class="stat"><span>الأقسام</span><b class="num">'+S.categories.length+'</b><small>'+S.categories.filter(catOpen).length+' مفتوح · '+S.categories.filter(function(c){return c.on!==false&&c.closed}).length+' مسكّر</small></div><div class="stat"><span>طلبات جديدة</span><b class="num">'+(A.privOk?no:'—')+'</b><small>'+(A.privOk?A.orders.length+' بالسجل':'جاري التحميل')+'</small></div><div class="stat"><span>مبيعات مُسلّمة</span><b class="num">'+(A.privOk?moneyTxtA(del.reduce(function(s,o){return s+num(o.total)},0)):'—')+'</b><small>'+(A.privOk?del.length+' طلب':'')+'</small></div></div>'+
+ '<div class="stats"><div class="stat"><span>الباكيجات الظاهرة</span><b class="num">'+vis+'</b><small>من أصل '+S.products.length+'</small></div><div class="stat"><span>الأقسام</span><b class="num">'+S.categories.length+'</b><small>'+S.categories.filter(catOpen).length+' مفتوح · '+S.categories.filter(function(c){return c.on!==false&&c.closed}).length+' مسكّر</small></div><div class="stat"><span>طلبات جديدة</span><b class="num">'+(A.ostate==='ok'?no:'—')+'</b><small>'+(!gsUrl()?'الطلبات مش مربوطة':A.ostate==='ok'?A.orders.length+' طلب بالمجموع':'جاري التحميل')+'</small></div><div class="stat"><span>مبيعات مُسلّمة</span><b class="num">'+(A.ostate==='ok'?moneyTxtA(del.reduce(function(s,o){return s+num(o.total)},0)):'—')+'</b><small>'+(A.ostate==='ok'?del.length+' طلب':'')+'</small></div></div>'+
+ (gsUrl()?'':'<div class="notice warn">'+ic('box')+'<div class="nb"><b>الطلبات التلقائية مش مربوطة لسه</b><span>الطلبات بتوصلك على واتساب. عشان كمان تنحفظ هون لحالها، اربطها مرة وحدة من «طلبات».</span><div><button class="btn gold sm" data-a="tab" data-t="orders">'+ic('link','sm')+'ربط الطلبات</button></div></div></div>')+
  (samples?'<div class="notice">'+ic('info')+'<div class="nb"><b>المتجر فيه '+samples+' عناصر تجريبية</b><span>الباكيجات والبانر التجريبي ظاهرين للزباين مع شارة «منتج تجريبي». لما تجهز باكيجك الأول، امسحهم بضغطة وحدة.</span><div><button class="btn danger sm" data-a="clearSamples">مسح البيانات التجريبية</button></div></div></div>':'')+
  '<div class="card"><h3>'+ic('sparkle')+'بداية سريعة</h3><ol class="steps-n" style="margin:0"><li>من «الأقسام» افتح أو سكّر الأقسام، وعدّل أسماءها وشكلها.</li><li>من «الباكيجات» ضيف باكيجك الأول: الصور والفيديو والسعر والمحتويات.</li><li>من «التوصيل» حدّد أسعار التوصيل لكل منطقة.</li><li>اضغط «حفظ ونشر»، وكل شي بيظهر للزباين فوراً.</li></ol><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn line sm" data-a="tab" data-t="prods">'+ic('plus','sm')+'إضافة باكيج</button><button class="btn line sm" data-a="tab" data-t="cats">'+ic('grid','sm')+'الأقسام</button><button class="btn line sm" data-a="tab" data-t="contact">'+fab('whatsapp')+'رقم الواتساب</button></div></div>'+
  '<div class="card"><h3>'+ic('link')+'رابط متجرك والكيو آر</h3><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><img src="assets/qr.png" alt="كيو آر متجر سِرّ" style="width:150px;height:150px;border-radius:14px;border:1px solid var(--line);background:#0d0c0b"><div style="display:grid;gap:10px;min-width:0;flex:1"><b class="ltr" style="word-break:break-all;font-family:var(--f-en);font-size:17px">'+esc(SITE)+'</b><span class="helper">هاد الرابط ثابت. الكيو آر بيفتحه مباشرة لأي حدا من أي موبايل.</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn line sm" data-a="copy" data-v="'+esc(SITE)+'">'+ic('copy','sm')+'نسخ الرابط</button><a class="btn line sm" href="assets/qr.png" download="sirr-qr.png">'+ic('dl','sm')+'تحميل الكيو آر</a></div></div></div></div>'}
@@ -1081,20 +1098,42 @@ function aBanners(){var L1=S.banners;
 function linkLabel(l){if(!l)return 'بدون رابط';if(l.indexOf('c:')===0){var c=catById(l.slice(2));return 'يفتح: '+(c?c.nameAr:'قسم محذوف')}if(l.indexOf('p:')===0){var p=prodById(l.slice(2));return 'يفتح: '+(p?p.nameAr:'باكيج محذوف')}return ''}
 var OST=[['new','جديد'],['confirmed','مؤكد'],['shipping','قيد التوصيل'],['delivered','تم التسليم'],['cancelled','ملغي']];
 function ostLabel(s){for(var i=0;i<OST.length;i++)if(OST[i][0]===s)return OST[i][1];return s}
-function aOrders(){
- var h=ah('الطلبات','كل طلب بيوصلك على واتساب برسالة جاهزة. انسخ الرسالة والصقها هون عشان ينحفظ الطلب وتتابع حالته.','<button class="btn line sm" data-a="ordNew">'+ic('plus','sm')+'إضافة يدوي</button>');
- if(A.ordersState==='error')return h+'<div class="notice bad">'+ic('warn')+'<div class="nb"><b>ما قدرنا نفتح سجل الطلبات</b><span>تأكد إن المفتاح معه صلاحية على '+esc(GH.priv)+' وجرّب تحدّث الصفحة.</span></div></div>';
- h+='<div class="card"><h3>'+ic('clip')+'لصق رسالة طلب من واتساب</h3><textarea class="inp" id="ordPaste" rows="5" placeholder="الصق رسالة الطلب كاملة هون…"></textarea><div><button class="btn gold sm" data-a="ordPaste">'+ic('save','sm')+'حفظ الطلب</button></div></div>';
- if(A.ordersState==='loading')return h+'<div class="empty"><span class="spin"></span><span>جاري تحميل الطلبات…</span></div>';
- if(false)h+='<div class="notice warn">'+ic('warn')+'<div class="nb">الاتصال بسجل الطلبات بطيء، ممكن ما يكون كل شي ظاهر لسه.</div></div>';
- if(A.ordersState==='error')h+='<div class="notice bad">'+ic('warn')+'<div class="nb">صار خطأ بقراءة سجل الطلبات. حدّث الصفحة وجرّب مرة ثانية.</div></div>';
+function fmtClock(ts){try{return new Date(ts).toLocaleTimeString('ar-JO-u-nu-latn',{hour:'2-digit',minute:'2-digit'})}catch(e){return ''}}
+function odRow(l,v,ltr){return v?'<div><span>'+l+': </span>'+(ltr?'<span class="ltr" style="color:inherit">'+esc(v)+'</span>':esc(v))+'</div>':''}
+function orderCard(o){var ph=o.phone?waNum(o.phone):'';
+ return '<div class="orow"><div class="oh"><b class="ltr">'+esc(o.no||'—')+'</b><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="helper">'+esc(fmtTime(o.at))+'</span><span class="ost '+esc(o.status)+'">'+ostLabel(o.status)+'</span></span></div>'+
+ '<div class="od">'+odRow('الاسم',o.name)+odRow('الهاتف',o.phone,1)+odRow('المنطقة',o.zone)+odRow('الموعد',o.when)+(o.recName?'<div><span>المستلم: </span>'+esc(o.recName)+(o.recPhone?' · <span class="ltr" style="color:inherit">'+esc(o.recPhone)+'</span>':'')+'</div>':'')+odRow('الدفع',o.pay)+(o.address?'<div style="grid-column:1/-1"><span>العنوان: </span>'+esc(o.address)+'</div>':'')+'</div>'+
+ (o.items?'<pre>'+esc(o.items)+'</pre>':'')+
+ '<div class="otot"><span>المجموع <b>'+moneyTxtA(o.sub)+'</b></span>'+(o.discount?'<span>الخصم'+(o.coupon?' ('+esc(o.coupon)+')':'')+' <b>−'+moneyTxtA(o.discount)+'</b></span>':'')+'<span>التوصيل <b>'+(o.delivery?moneyTxtA(o.delivery):'مجاني')+'</b></span><span class="t">الإجمالي <b>'+moneyTxtA(o.total)+'</b></span></div>'+
+ (o.notes?'<div class="note">'+ic('msg','sm')+esc(o.notes)+'</div>':'')+
+ '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="inp" style="min-height:40px;width:auto;padding:6px 12px" data-ost="'+esc(o.id)+'" aria-label="حالة الطلب">'+OST.map(function(s){return '<option value="'+s[0]+'"'+(o.status===s[0]?' selected':'')+'>'+s[1]+'</option>'}).join('')+'</select>'+
+ (ph?'<a class="btn wa sm" href="https://wa.me/'+ph+'" target="_blank" rel="noopener">'+fab('whatsapp')+'مراسلة الزبون</a>':'')+
+ (o.msg?'<button class="btn ghost sm" data-a="copy" data-v="'+esc(o.msg)+'">'+ic('copy','sm')+'نسخ الطلب</button>':'')+
+ '<button class="btn ghost sm" data-a="oDel" data-id="'+esc(o.id)+'" style="color:var(--bad)">'+ic('trash','sm')+'حذف</button></div></div>'}
+function gsSetup(change){var k=gsKey();
+ return '<div class="card"><h3>'+ic('link')+(change?'تغيير ربط الطلبات':'ربط الطلبات التلقائية')+'</h3>'+
+ '<p style="margin:0;color:var(--tx2)">الطلبات بتنحفظ بجدول Google على حسابك، ومجاناً. بتعمل الربط مرة وحدة بس، وبياخد حوالي 5 دقايق، والأسهل تعمله من الكمبيوتر.</p>'+
+ '<ol class="steps-n" style="margin:0">'+
+ '<li><span>افتح <a class="lnk" href="https://sheets.new" target="_blank" rel="noopener">جدول Google جديد</a> بحسابك، وسمّيه «طلبات سِرّ».</span></li>'+
+ '<li><span>من القائمة فوق اختار <b>الإضافات</b> (Extensions) وبعدين <b>Apps Script</b>.</span></li>'+
+ '<li><span>اضغط زر «نسخ كود الربط» تحت. بصفحة Apps Script امسح الكود الموجود كله، الصق الكود مكانه، واضغط أيقونة الحفظ.</span></li>'+
+ '<li><span>اضغط <b>Deploy</b> وبعدين <b>New deployment</b>. جنب <b>Select type</b> اضغط الترس واختار <b>Web app</b>. خلّي <b>Execute as: Me</b> و<b>Who has access: Anyone</b>، واضغط <b>Deploy</b>.</span></li>'+
+ '<li><span>اضغط <b>Authorize access</b>، اختار حسابك، واضغط <b>Allow</b>. إذا طلعتلك رسالة «Google hasn’t verified this app» اضغط <b>Advanced</b> وبعدين <b>Go to</b>، لأنه هاد الكود تبعك إنت.</span></li>'+
+ '<li><span>انسخ <b>Web app URL</b> والصقه هون، واضغط «ربط».</span></li></ol>'+
+ '<div><button class="btn dark sm" data-a="gsCopy"'+(k?'':' disabled')+'>'+ic('copy','sm')+(k?'نسخ كود الربط':'جاري تجهيز الكود…')+'</button></div>'+
+ '<div class="fld"><label for="gsUrl">رابط Web app</label><div class="inrow"><input class="inp" id="gsUrl" dir="ltr" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="'+esc(change?gsUrl():'')+'"><button class="btn gold sm" data-a="gsConnect"'+(A.gsBusy?' disabled':'')+'>'+(A.gsBusy?'<span class="spin" style="width:16px;height:16px"></span>':ic('link','sm'))+'ربط</button></div>'+(A.gsErr?'<span class="ferr">'+esc(A.gsErr)+'</span>':'')+'</div>'+
+ (change?'<div><button class="btn danger sm" data-a="gsOff">فصل الربط</button></div>':'')+'</div>'}
+function aOrders(){var con=!!gsUrl();
+ var h=ah('طلبات',con?'كل طلب بيبعته زبون بينحفظ هون تلقائياً، وبنفس الوقت بيوصلك على واتساب.':'اربط الطلبات مرة وحدة، وبعدها كل طلب بيبعته زبون بينحفظ هون لحاله، وبنفس الوقت بيوصلك على واتساب.',con?'<button class="btn line sm" data-a="oRefresh"'+(oBusy?' disabled':'')+'>'+ic('refresh','sm')+'تحديث</button>':'');
+ if(!con)return h+gsSetup(false);
+ h+='<div class="notice">'+ic('link')+'<div class="nb"><b>الطلبات مربوطة بجدول Google</b><span>'+(A.oAt?'آخر تحديث الساعة '+esc(fmtClock(A.oAt))+'. الصفحة بتتحدّث لحالها كل دقيقة تقريباً.':'بنجيب الطلبات…')+'</span><div style="display:flex;gap:8px;flex-wrap:wrap">'+(A.sheet?'<a class="btn line sm" href="'+esc(A.sheet)+'" target="_blank" rel="noopener">'+ic('grid','sm')+'فتح جدول الطلبات</a>':'')+'<button class="btn ghost sm" data-a="gsEdit">'+ic('edit','sm')+(A.gsEditing?'إغلاق':'تغيير الربط')+'</button></div></div></div>';
+ if(A.gsEditing)h+=gsSetup(true);
+ if(A.ostate==='error')h+='<div class="notice bad">'+ic('warn')+'<div class="nb"><b>ما قدرنا نجيب الطلبات</b><span>'+esc(A.oErr)+'</span></div></div>';
+ if(A.ostate!=='ok'&&!A.orders.length)return h+(A.ostate==='error'?'':'<div class="empty"><span class="spin"></span><span>جاري تحميل الطلبات…</span></div>');
  var f=A.ofilter;var list=A.orders.filter(function(o){return f==='all'||o.status===f});
  h+='<div class="filt"><button class="'+(f==='all'?'on':'')+'" data-a="ofilter" data-v="all">الكل ('+A.orders.length+')</button>'+OST.map(function(s){var n=A.orders.filter(function(o){return o.status===s[0]}).length;return '<button class="'+(f===s[0]?'on':'')+'" data-a="ofilter" data-v="'+s[0]+'">'+s[1]+' ('+n+')</button>'}).join('')+'</div>';
- if(!list.length)return h+'<div class="empty">'+ic('box')+'<b>'+(A.orders.length?'ما في طلبات بهالحالة':'لسه ما في طلبات بالسجل')+'</b><span>أول ما يوصلك طلب على واتساب، الصقه فوق.</span></div>';
- return h+'<div class="alist">'+list.map(function(o){var ph=o.phone?waNum(o.phone):'';return '<div class="orow"><div class="oh"><b class="ltr">'+esc(o.no||'بدون رقم')+'</b><span class="ost '+esc(o.status||'new')+'">'+ostLabel(o.status||'new')+'</span></div>'+
- '<div class="od">'+(o.name?'<div><span>الاسم: </span>'+esc(o.name)+'</div>':'')+(o.phone?'<div><span>الهاتف: </span><span class="ltr" style="color:inherit">'+esc(o.phone)+'</span></div>':'')+(o.zone?'<div><span>المنطقة: </span>'+esc(o.zone)+'</div>':'')+(o.total?'<div><span>الإجمالي: </span>'+esc(o.total)+'</div>':'')+(o.date?'<div><span>الموعد: </span>'+esc(o.date)+'</div>':'')+(o.recName?'<div><span>المستلم: </span>'+esc(o.recName)+(o.recPhone?' · <span class="ltr" style="color:inherit">'+esc(o.recPhone)+'</span>':'')+'</div>':'')+(o.address?'<div style="grid-column:1/-1"><span>العنوان: </span>'+esc(o.address)+'</div>':'')+'</div>'+
- (o.items?'<pre>'+esc(o.items)+'</pre>':'')+(o.notes?'<div class="note">'+ic('msg','sm')+esc(o.notes)+'</div>':'')+
- '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="inp" style="min-height:40px;width:auto;padding:6px 12px" data-ost="'+esc(o.id)+'" aria-label="حالة الطلب">'+OST.map(function(s){return '<option value="'+s[0]+'"'+(o.status===s[0]?' selected':'')+'>'+s[1]+'</option>'}).join('')+'</select>'+(ph?'<a class="btn wa sm" href="https://wa.me/'+ph+'" target="_blank" rel="noopener">'+fab('whatsapp')+'مراسلة الزبون</a>':'')+'<button class="btn ghost sm" data-a="ordEdit" data-id="'+esc(o.id)+'">'+ic('edit','sm')+'تعديل</button><button class="btn ghost sm" data-a="ordDel" data-id="'+esc(o.id)+'" style="color:var(--bad)">'+ic('trash','sm')+'حذف</button><span class="helper" style="margin-inline-start:auto">'+fmtTime(o.at)+'</span></div></div>'}).join('')+'</div>'}
+ if(!list.length)return h+'<div class="empty">'+ic('box')+'<b>'+(A.orders.length?'ما في طلبات بهالحالة':'لسه ما وصل ولا طلب')+'</b><span>'+(A.orders.length?'':'أول ما زبون يبعت طلب من الموقع، بيظهر هون لحاله.')+'</span></div>';
+ return h+'<div class="alist">'+list.map(orderCard).join('')+'</div>'}
 function aZones(){var d=S.settings.delivery;
  return ah('التوصيل','سعر التوصيل لكل منطقة. الأسعار الموجودة مبدئية، عدّلها حسب شركة التوصيل اللي بتتعامل معها.','<button class="btn gold sm" data-a="zNew">'+ic('plus','sm')+'إضافة منطقة</button>')+
  (function(){var fr=S.products.filter(function(p){return p.freeShip});return '<div class="notice">'+ic('truck')+'<div class="nb"><b>توصيل مجاني لباكيجات معيّنة</b><span>من تعديل أي باكيج، شغّل «توصيل مجاني لهالباكيج». إذا الطلب فيه باكيج منهم، التوصيل بيصير مجاني على الطلب كامل.</span><span>'+(fr.length?'حالياً: '+fr.map(function(p){return '«'+esc(p.nameAr)+'»'}).join('، '):'حالياً ولا باكيج توصيله مجاني.')+'</span></div></div>'})()+
@@ -1164,7 +1203,6 @@ function renderModal(){if(!A.modal){showModal('');return}var sc=$('#mdlB');var t
   '<div class="fld"><label for="e_exp">آخر يوم للكود (اختياري)</label><input class="inp" type="date" id="e_exp" data-e="exp" value="'+esc(A.ed.exp||'')+'"></div>'+tE('on','الكود شغّال'),stdFoot('cpSave'));
  else if(m==='rv')html=mdl(A.ed._new?'إضافة تقييم':'تعديل التقييم','<div class="notice">'+ic('info')+'<div class="nb">ضيف بس تقييمات حقيقية وصلتك من زباينك.</div></div><div class="fld"><span class="lb">النجوم</span>'+segE('stars',[['5','5 ★'],['4','4 ★'],['3','3 ★'],['2','2 ★'],['1','1 ★']])+'</div>'+fE('name','اسم الزبون (أو الاسم الأول) *','text')+fE('text','نص التقييم *','area','',4)+
   '<div class="fld"><label for="e_pid">الباكيج (اختياري)</label><select class="inp" id="e_pid" data-e="pid"><option value="">—</option>'+S.products.map(function(p){return '<option value="'+p.id+'"'+(A.ed.pid===p.id?' selected':'')+'>'+esc(p.nameAr)+'</option>'}).join('')+'</select></div>'+tE('on','ظاهر بالمتجر'),stdFoot('rvSave'));
- else if(m==='ord')html=mdl(A.ed._new?'إضافة طلب':'تعديل الطلب','<div class="row2">'+fE('no','رقم الطلب','text','','dir="ltr"')+'<div class="fld"><label for="e_status">الحالة</label><select class="inp" id="e_status" data-e="status">'+OST.map(function(s){return '<option value="'+s[0]+'"'+(A.ed.status===s[0]?' selected':'')+'>'+s[1]+'</option>'}).join('')+'</select></div></div><div class="row2">'+fE('name','الاسم','text')+fE('phone','الهاتف','tel','','dir="ltr"')+'</div><div class="row2">'+fE('zone','المنطقة','text')+fE('total','الإجمالي','text')+'</div>'+fE('address','العنوان','text')+'<div class="row2">'+fE('recName','اسم المستلم','text')+fE('recPhone','هاتف المستلم','tel','','dir="ltr"')+'</div>'+fE('date','موعد التوصيل','text')+fE('items','المنتجات','area','',4)+fE('notes','ملاحظات','area','',2),stdFoot('ordSave'));
  else if(m==='confirm')html=mdl('تأكيد','<p style="margin:0;font-size:15px">'+A.confirm.text+'</p>','<button class="btn ghost" data-a="mclose">إلغاء</button><button class="btn danger" data-a="confirmYes">'+(A.confirm.yes||'نعم، احذف')+'</button>');
  else if(m==='export')html=mdl('نسخ بيانات المتجر','<p style="margin:0;color:var(--mute)">انسخ النص كامل وابعثه لـ Claude بالمحادثة، ورح ينشر تعديلاتك.</p><textarea class="inp" id="expTa" rows="8" readonly dir="ltr" style="font-size:11px">'+esc(JSON.stringify(S))+'</textarea>','<button class="btn gold" data-a="expCopy">'+ic('copy','sm')+'نسخ</button>');
  showModal(html);var sc2=$('#mdlB');if(sc2)sc2.scrollTop=top;if(window.FontAwesome&&window.FontAwesome.dom)try{window.FontAwesome.dom.i2svg({node:modalRoot})}catch(e){}}
@@ -1224,23 +1262,42 @@ function utf8b64(b){var bin=atob(String(b||'').replace(/\s/g,''));var u=new Uint
 function blobB64(blob){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(String(fr.result).split(',')[1])};fr.onerror=rej;fr.readAsDataURL(blob)})}
 function ghBlob(b64){return ghApi('POST','/repos/'+GH.owner+'/'+GH.repo+'/git/blobs',{content:b64,encoding:'base64'}).then(function(r){return r.sha})}
 
-/* ----- private data: orders + coupon codes (private repo) ----- */
-var PRIV={sha:null,data:{orders:[],codes:{}}},privQ=Promise.resolve();
+/* ----- private data: coupon codes + orders key (private repo) ----- */
+var PRIV={sha:null,data:{codes:{}}},privQ=Promise.resolve();
 var PRIV_PATH=function(){return '/repos/'+GH.owner+'/'+GH.priv+'/contents/private.json'};
-function syncPriv(){A.orders=(PRIV.data.orders||[]).slice().sort(function(a,b){return (b.at||0)-(a.at||0)});A.codes=PRIV.data.codes||{}}
-function privGet(){return ghApi('GET',PRIV_PATH()+'?ref='+GH.branch).then(function(r){PRIV.sha=r.sha;var d={};try{d=JSON.parse(utf8b64(r.content))||{}}catch(e){}PRIV.data={orders:d.orders||[],codes:d.codes||{}};syncPriv()},function(e){if(e.status===404){PRIV.sha=null;PRIV.data={orders:[],codes:{}};syncPriv();return}throw e})}
-function loadPriv(){A.ordersState='loading';return privGet().then(function(){A.privOk=true;A.ordersState='ok'},function(){A.privOk=false;A.ordersState='error'}).then(function(){if(route.v==='admin'&&!A.modal)renderAdmin()})}
-function privSave(mut){var attempt=function(n){mut(PRIV.data);syncPriv();var body={message:'تحديث سجل الطلبات',content:b64utf8(JSON.stringify(PRIV.data)),branch:GH.branch};if(PRIV.sha)body.sha=PRIV.sha;
+function syncPriv(){A.codes=PRIV.data.codes||{}}
+function privGet(){return ghApi('GET',PRIV_PATH()+'?ref='+GH.branch).then(function(r){PRIV.sha=r.sha;var d={};try{d=JSON.parse(utf8b64(r.content))||{}}catch(e){}if(!d.codes)d.codes={};delete d.orders;PRIV.data=d;syncPriv()},function(e){if(e.status===404){PRIV.sha=null;PRIV.data={codes:{}};syncPriv();return}throw e})}
+function loadPriv(){return privGet().then(function(){A.privOk=true;if(!PRIV.data.ordersKey)return ensureKey()},function(){A.privOk=false}).then(function(){if(route.v==='admin'&&!A.modal)renderAdmin();return loadOrders()})}
+function privSave(mut){var attempt=function(n){mut(PRIV.data);syncPriv();var body={message:'تحديث البيانات الخاصة',content:b64utf8(JSON.stringify(PRIV.data)),branch:GH.branch};if(PRIV.sha)body.sha=PRIV.sha;
   return ghApi('PUT',PRIV_PATH(),body).then(function(r){PRIV.sha=r&&r.content?r.content.sha:PRIV.sha},function(e){if((e.status===409||e.status===422)&&n<1)return privGet().then(function(){return attempt(n+1)});throw e})};
  var p=privQ.then(function(){return attempt(0)});privQ=p.catch(function(){});return p.then(function(){if(route.v==='admin'&&!A.modal)renderAdmin()})}
-function parseOrder(txt){var o={};var lines=txt.split(/\r?\n/).map(function(s){return s.trim()}).filter(Boolean);var items=[];
- var map=[['no',/^(?:رقم الطلب|Order no)\s*[:：]\s*(.+)$/i],['recName',/^(?:اسم المستلم|Recipient)\s*[:：]\s*(.+)$/i],['recPhone',/^(?:هاتف المستلم|Recipient phone)\s*[:：]\s*(.+)$/i],['name',/^(?:الاسم|Name)\s*[:：]\s*(.+)$/i],['phone',/^(?:الهاتف|Phone)\s*[:：]\s*(.+)$/i],['zone',/^(?:المنطقة|Area)\s*[:：]\s*(.+)$/i],['address',/^(?:العنوان|Address)\s*[:：]\s*(.+)$/i],['date',/^(?:موعد التوصيل|Delivery date)\s*[:：]\s*(.+)$/i],['total',/^(?:الإجمالي|Total)\s*[:：]\s*(.+)$/i],['pay',/^(?:الدفع|Payment)\s*[:：]\s*(.+)$/i],['notes',/^(?:ملاحظات|Notes)\s*[:：]\s*(.+)$/i]];
- lines.forEach(function(l){if(/^[•▪·]/.test(l)){items.push(l.replace(/^[•▪·]\s*/,''));return}for(var i=0;i<map.length;i++){var m=l.match(map[i][1]);if(m){if(!o[map[i][0]])o[map[i][0]]=m[1].trim();return}}});
- o.items=items.join('\n');return o}
-function orderBody(o){return {id:o.id,no:o.no||'',name:o.name||'',phone:o.phone||'',zone:o.zone||'',address:o.address||'',recName:o.recName||'',recPhone:o.recPhone||'',date:o.date||'',items:o.items||'',total:o.total||'',pay:o.pay||'',notes:o.notes||'',status:o.status||'new',at:o.at||Date.now()}}
-function saveOrder(o,id){var b=orderBody(o);b.id=id||('o_'+Date.now().toString(36)+uid());return privSave(function(d){d.orders=d.orders||[];var i=-1;d.orders.forEach(function(x,j){if(x.id===b.id)i=j});if(i>=0)d.orders[i]=b;else d.orders.push(b)})}
-function setOrderStatus(id,st){privSave(function(d){(d.orders||[]).forEach(function(x){if(x.id===id)x.status=st})}).then(function(){toast('تم تحديث الحالة')},function(){toast('ما زبط التحديث، جرّب مرة ثانية',true)})}
-function delOrder(id){return privSave(function(d){d.orders=(d.orders||[]).filter(function(x){return x.id!==id})})}
+function ensureKey(){var a=new Uint8Array(18);crypto.getRandomValues(a);var k=Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2)}).join('');return privSave(function(d){if(!d.ordersKey)d.ordersKey=k}).catch(function(){})}
+
+/* ----- automatic orders (Google Sheet via Apps Script) ----- */
+function gsUrl(){return String(S.settings.ordersUrl||'').trim()}
+function gsKey(){return (PRIV.data&&PRIV.data.ordersKey)||''}
+function gsGet(q,url){var u=url||gsUrl();return fetch(u+(u.indexOf('?')>=0?'&':'?')+q+'&t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()})}
+function gsPost(b){return fetch(gsUrl(),{method:'POST',body:JSON.stringify(b)}).then(function(r){return r.json()})}
+function normOrder(o){o=o||{};['sub','discount','delivery','total'].forEach(function(k){o[k]=num(o[k])});o.at=typeof o.at==='number'?o.at:(Date.parse(o.at)||0);['id','no','name','phone','recName','recPhone','zone','address','when','items','coupon','pay','notes','msg','status'].forEach(function(k){o[k]=o[k]==null?'':String(o[k])});o.status=o.status||'new';return o}
+var oBusy=false;
+function loadOrders(quiet){if(!gsUrl()){A.ostate='off';return Promise.resolve()}
+ if(!gsKey()){A.ostate='error';A.oErr='مفتاح الربط مش موجود. حدّث الصفحة وجرّب.';ordersChanged();return Promise.resolve()}
+ if(oBusy)return Promise.resolve();oBusy=true;if(!quiet&&A.ostate!=='ok')A.ostate='loading';
+ return gsGet('action=list&key='+encodeURIComponent(gsKey())).then(function(r){if(!r||!r.ok)throw new Error(r&&r.error==='key'?'key':'bad');
+  var list=(r.orders||[]).map(normOrder).sort(function(a,b){return b.at-a.at});var prev=A.oIds,ids={};list.forEach(function(o){ids[o.id]=1});
+  if(prev){var fresh=list.filter(function(o){return !prev[o.id]});if(fresh.length)toast(fresh.length===1?'وصل طلب جديد '+fresh[0].no:'وصلت '+fresh.length+' طلبات جديدة')}
+  A.orders=list;A.oIds=ids;A.sheet=r.sheet||A.sheet;A.ostate='ok';A.oErr='';A.oAt=Date.now()},
+ function(e){A.ostate='error';A.oErr=e&&e.message==='key'?'كود الربط بجدول Google مش نفس الكود الحالي. افتح «تغيير الربط» وانسخ الكود من جديد.':'ما قدرنا نوصل لجدول الطلبات. تأكد من الإنترنت، وإذا ضلّت المشكلة افتح «تغيير الربط».'}).then(function(){oBusy=false;ordersChanged()})}
+function isTyping(){var a=document.activeElement;return !!a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)}
+function ordersChanged(){if(route.v!=='admin')return;
+ if(!A.modal&&(A.tab==='orders'||A.tab==='overview')&&!isTyping()){renderAdmin();return}
+ var b=$('.atab[data-t=orders]');if(!b)return;var n=A.orders.filter(function(o){return o.status==='new'}).length;var c=b.querySelector('.cnt');
+ if(n){if(!c){c=document.createElement('span');c.className='cnt num';b.appendChild(c)}c.textContent=n}else if(c)c.remove()}
+function setOrderStatus(id,st){var o=A.orders.filter(function(x){return x.id===id})[0];if(!o)return;var old=o.status;o.status=st;
+ gsPost({action:'status',key:gsKey(),id:id,status:st}).then(function(r){if(!r||!r.ok)throw 0;toast('تم تحديث الحالة');renderAdmin()},function(){o.status=old;toast('ما زبط التحديث، جرّب مرة ثانية',true);renderAdmin()})}
+var oTimer=0;
+function startOrdersPolling(){if(oTimer)return;oTimer=setInterval(function(){if(cap.owner&&route.v==='admin'&&!document.hidden&&gsUrl())loadOrders(true)},45000);
+ document.addEventListener('visibilitychange',function(){if(!document.hidden&&cap.owner&&route.v==='admin'&&gsUrl())loadOrders(true)})}
 
 /* ----- publish (one commit: store.json + new media, unused media removed) ----- */
 function mediaRefs(){var m={};function add(p){if(p&&/^media\//.test(p))m[p]=1}S.categories.forEach(function(c){add(c.img)});S.banners.forEach(function(b){add(b.img)});S.products.forEach(function(p){(p.media||[]).forEach(function(x){add(x.src);add(x.poster)})});return m}
@@ -1307,19 +1364,26 @@ var ADM={
  rvEdit:function(el){open('rv',clone(S.reviews[+el.getAttribute('data-i')]))},
  rvSave:function(){var r=A.ed;if(!String(r.name||'').trim()||!String(r.text||'').trim()){toast('اكتب الاسم ونص التقييم',true);return}r.stars=+r.stars||5;commit('reviews',r)},
  ofilter:function(el){A.ofilter=el.getAttribute('data-v');renderAdmin()},
- ordPaste:function(){var ta=$('#ordPaste');var txt=ta?ta.value.trim():'';if(!txt){toast('الصق رسالة الطلب أول',true);return}var o=parseOrder(txt);if(!o.no&&!o.name&&!o.phone){toast('ما قدرنا نقرأ الرسالة. تأكد إنها رسالة طلب كاملة، أو استخدم «إضافة يدوي».',true);return}
-  if(o.no&&A.orders.some(function(x){return x.no===o.no})){toast('هالطلب محفوظ من قبل',true);return}saveOrder(o).then(function(){toast('انحفظ الطلب '+(o.no||''));var t2=$('#ordPaste');if(t2)t2.value=''},function(){toast('ما زبط الحفظ، جرّب مرة ثانية',true)})},
- ordNew:function(){open('ord',{_new:1,no:'',status:'new',name:'',phone:'',zone:'',total:'',address:'',recName:'',recPhone:'',date:'',items:'',notes:''})},
- ordEdit:function(el){var o=A.orders.filter(function(x){return x.id===el.getAttribute('data-id')})[0];if(o)open('ord',clone(o))},
- ordSave:function(){var o=A.ed;var id=o._new?null:o.id;delete o._new;saveOrder(o,id).then(function(){A.modal=null;A.ed=null;showModal('');toast('انحفظ الطلب')},function(){toast('ما زبط الحفظ',true)})},
- ordDel:function(el){var id=el.getAttribute('data-id');askConfirm('بدك تحذف هالطلب من السجل؟',function(){delOrder(id).then(function(){toast('انحذف')},function(){toast('ما زبط الحذف',true)})})}
+ oRefresh:function(){loadOrders()},
+ oDel:function(el){var id=el.getAttribute('data-id');askConfirm('بدك تحذف هالطلب؟ رح ينحذف من جدول Google كمان.',function(){gsPost({action:'delete',key:gsKey(),id:id}).then(function(r){if(!r||!r.ok)throw 0;A.orders=A.orders.filter(function(x){return x.id!==id});renderAdmin();toast('انحذف الطلب')},function(){toast('ما زبط الحذف، جرّب مرة ثانية',true)})},'نعم، احذف')},
+ gsCopy:function(){var k=gsKey();if(!k){toast('لحظة، الكود لسه بيجهز',true);return}copyText(ORDERS_GS.replace('@KEY@',k))},
+ gsEdit:function(){A.gsEditing=!A.gsEditing;A.gsErr='';renderAdmin()},
+ gsConnect:function(){var i=$('#gsUrl');var u=(i?i.value:'').trim().replace(/\/+$/,'');A.gsErr='';
+  if(!/^https:\/\/script\.google\.com\/(?:a\/macros\/[^\/]+|macros)\/s\/[\w-]+\/exec$/.test(u)){A.gsErr='الرابط لازم يبدأ بـ https://script.google.com/macros/s/ وينتهي بـ /exec. انسخ «Web app URL» من صفحة Deploy.';renderAdmin();return}
+  var k=gsKey();if(!k){A.gsErr='كود الربط لسه بيجهز. استنى ثواني وجرّب.';renderAdmin();return}
+  A.gsBusy=true;renderAdmin();
+  gsGet('action=ping&key='+encodeURIComponent(k),u).then(function(r){A.gsBusy=false;
+   if(!r||!r.ok){A.gsErr=r&&r.error==='key'?'الكود اللي بصفحة Apps Script مش نفس كود الربط. انسخه من الزر مرة ثانية، الصقه، احفظ، واعمل Deploy جديد.':'الرابط ما رجّع الرد المتوقع. تأكد إنك نسخت رابط Web app.';renderAdmin();return}
+   S.settings.ordersUrl=u;A.sheet=r.sheet||'';A.gsEditing=false;A.oIds=null;A.orders=[];A.ostate='loading';markDirty();publish();loadOrders();toast('انربطت الطلبات! بننشر الإعدادات هسه')},
+  function(){A.gsBusy=false;A.gsErr='ما قدرنا نوصل للرابط. تأكد إنك اخترت Who has access: Anyone وإنك نسخت رابط Web app كامل.';renderAdmin()})},
+ gsOff:function(){askConfirm('بدك تفصل ربط الطلبات؟ الطلبات اللي وصلت بتضل محفوظة بجدول Google.',function(){S.settings.ordersUrl='';A.orders=[];A.oIds=null;A.ostate='off';A.gsEditing=false;markDirty();publish()},'نعم، افصل')}
 };
 
 /* ---------- admin access (GitHub key) ---------- */
 function initGH(){if(!GHT){cap.ready=true;cap.owner=false;return Promise.resolve(false)}
  return ghApi('GET','/repos/'+GH.owner+'/'+GH.repo).then(function(r){cap.owner=!r.permissions||!!r.permissions.push;if(!cap.owner)A.loginErr='المفتاح ما معه صلاحية الكتابة على المتجر.'},function(e){cap.owner=false;A.loginErr=e.status===401?'المفتاح غير صالح أو انتهت صلاحيته. اعمل مفتاح جديد.':e.status===404||e.status===403?'المفتاح ما بيوصل لمستودع المتجر. تأكد إنك اخترت '+GH.repo+' و '+GH.priv+'.':'ما قدرنا نتحقق من المفتاح. تأكد من الإنترنت وجرّب.'}).then(function(){cap.ready=true;if(!cap.owner&&A.loginErr&&GHT){GHT=null;store.del('sirr_gh')}return cap.owner})}
 function checkDraft(){var dr=jget('sirr_draft',null);A.draft=null;if(dr&&dr.st){var dh=cyrb(JSON.stringify(deepFill(dr.st,DEF)));if(dh===PUB_HASH)store.del('sirr_draft');else A.draft=dr}}
-function afterOwner(){checkDraft();loadPriv()}
+function afterOwner(){checkDraft();loadPriv();startOrdersPolling()}
 function doLogin(tok){GHT={token:tok};A.loginErr='';A.loginBusy=true;render();
  initGH().then(function(ok){A.loginBusy=false;if(!ok){GHT=null;render();return}store.set('sirr_gh',JSON.stringify(GHT));LOADED=false;render();return loadStore().then(function(){afterOwner();render();toast('أهلاً فيك')})})}
 
