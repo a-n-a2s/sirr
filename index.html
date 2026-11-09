@@ -646,7 +646,7 @@ var DEF={
   storyAr:'كل تجربة حكاية، وكل حكاية بتبدأ من سِرّ',storyEn:'Every experience is a story, and every story begins with Sirr.',
   subAr:'باكيجات هدايا جاهزة · توصيل لكل محافظات المملكة',subEn:'Ready gift packages · Delivery across Jordan',
   secTitleAr:'الأقسام',secTitleEn:'Collections',
-  whatsapp:'0782048654',waMsgAr:'مرحبا سِرّ، عندي استفسار',waMsgEn:'Hello Sirr, I have a question',
+  whatsapp:'0781034550',waMsgAr:'مرحبا سِرّ، عندي استفسار',waMsgEn:'Hello Sirr, I have a question',
   facebook:'',instagram:'',tiktok:'',curAr:'د.أ',curEn:'JOD',showReviews:true,ordersUrl:'',
   announce:{on:false,ar:'',en:''},
   cod:{labelAr:'كاش عند الاستلام',labelEn:'Cash on delivery'},
@@ -1157,7 +1157,7 @@ function fldS(path,label,type,ph,extra){var v=getPath(S,path.replace(/^settings\
 function togS(path,label,desc){var v=getPath(S,path);var id='s_'+path.replace(/\./g,'_');return '<label class="tog" for="'+id+'"><span class="tt"><b>'+label+'</b>'+(desc?'<span>'+desc+'</span>':'')+'</span><input type="checkbox" id="'+id+'" data-s="'+path+'" data-type="bool"'+(v!==false&&v?' checked':'')+'><span class="sw"></span></label>'}
 function aContact(){var st=S.settings;
  return ah('التواصل والنصوص','رقم الواتساب، روابط السوشال ميديا، وكل النصوص اللي بتظهر بالصفحة الرئيسية.')+
- '<div class="card"><h3>'+fab('whatsapp')+'رقم التواصل عبر واتساب</h3><div class="fld"><label for="s_settings_whatsapp">رقم التواصل عبر واتساب</label><div style="display:flex;gap:8px;align-items:center"><span style="color:#5fd38d">'+fab('whatsapp')+'</span><input class="inp num" id="s_settings_whatsapp" data-s="settings.whatsapp" type="tel" dir="ltr" value="'+esc(st.whatsapp)+'" placeholder="07XXXXXXXX"></div><span class="helper">اكتب الرقم زي ما هو (مثلاً 0782048654). كل أزرار الواتساب بالمتجر بتتحدّث تلقائياً.</span></div>'+
+ '<div class="card"><h3>'+fab('whatsapp')+'رقم التواصل عبر واتساب</h3><div class="fld"><label for="s_settings_whatsapp">رقم التواصل عبر واتساب</label><div style="display:flex;gap:8px;align-items:center"><span style="color:#5fd38d">'+fab('whatsapp')+'</span><input class="inp num" id="s_settings_whatsapp" data-s="settings.whatsapp" type="tel" dir="ltr" value="'+esc(st.whatsapp)+'" placeholder="07XXXXXXXX"></div><span class="helper">اكتب الرقم زي ما هو (مثلاً 0781034550). كل أزرار الواتساب بالمتجر بتتحدّث تلقائياً.</span></div>'+
  '<div><a class="btn wa sm" id="waTest" href="'+esc(waLink(st.waMsgAr))+'" target="_blank" rel="noopener">'+fab('whatsapp')+'تجربة الرابط</a></div>'+
  '<div class="row2">'+fldS('settings.waMsgAr','الرسالة الجاهزة لما الزبون يضغط واتساب (عربي)','text')+fldS('settings.waMsgEn','بالإنجليزي','text')+'</div></div>'+
  '<div class="card"><h3>'+ic('msg')+'السوشال ميديا</h3>'+fldS('settings.facebook','رابط فيسبوك','url','https://facebook.com/...','dir="ltr"')+fldS('settings.instagram','رابط إنستغرام','url','اتركه فاضي لحد ما تفتح الحساب','dir="ltr"')+fldS('settings.tiktok','رابط تيك توك','url','اختياري','dir="ltr"')+'<span class="helper">الرابط الفاضي ما بيظهر بالمتجر.</span></div>'+
